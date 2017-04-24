@@ -41,6 +41,8 @@ public class Camera {
 
     private static final int CAMERA_TIMESTAMP_OFFSET_NS = 0;
 
+    private static final int MAX_IMAGE_READER_IMAGES = 2;
+
     public Camera(@NonNull Context context, String cameraId) {
         mContext = context;
         mCameraId = cameraId;
@@ -99,8 +101,8 @@ public class Camera {
                     Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
                     new CompareSizesByArea());
             Log.i(TAG, "Largest output is " + largest);
-            mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
-                    ImageFormat.JPEG, /*maxImages*/2);
+            mImageReader = ImageReader.newInstance(width, height, // largest.getWidth(), largest.getHeight(),
+                    ImageFormat.JPEG, /*maxImages*/ MAX_IMAGE_READER_IMAGES);
             mImageReader.setOnImageAvailableListener(
                     mOnImageAvailableListener, mCameraBackgroundHandler);
         } catch (CameraAccessException e) {
@@ -337,4 +339,3 @@ public class Camera {
     private Handler mCameraBackgroundHandler;
 
 }
-

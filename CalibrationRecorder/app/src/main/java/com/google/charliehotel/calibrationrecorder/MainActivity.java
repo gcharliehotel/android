@@ -41,8 +41,8 @@ public class MainActivity extends Activity {
     private static final int CAMERA2_MAX_PREVIEW_WIDTH = 1920;
     private static final int CAMERA2_MAX_PREVIEW_HEIGHT = 1080;
 
-    private static final int PREVIEW_WIDTH = CAMERA2_MAX_PREVIEW_WIDTH;  // 3036
-    private static final int PREVIEW_HEIGHT = CAMERA2_MAX_PREVIEW_HEIGHT;  // 3036
+    private static final int PREVIEW_WIDTH = 3016; // CAMERA2_MAX_PREVIEW_WIDTH;
+    private static final int PREVIEW_HEIGHT = 3016; // CAMERA2_MAX_PREVIEW_HEIGHT;
 
     private static final int ACCEL_LPF_TIMESTAMP_OFFSET_NS = 1370833;
     private static final int GYRO_LPF_TIMESTAMP_OFFSET_NS = 1370833;
