@@ -25,10 +25,8 @@ import android.util.Log;
 import android.util.Size;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -39,9 +37,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Camera {
     private static final String TAG = "CalibrationRecorder";
 
+    /**
+     * Max preview width/height that is guaranteed by Camera2 API
+     */
+    private static final int CAMERA2_MAX_PREVIEW_WIDTH = 1920;
+    private static final int CAMERA2_MAX_PREVIEW_HEIGHT = 1080;
+
     private static final int CAMERA_TIMESTAMP_OFFSET_NS = 0;
 
-    private static final int MAX_IMAGE_READER_IMAGES = 2;
+    private static final int MAX_IMAGE_READER_IMAGES = 4;
 
     public Camera(@NonNull Context context, String cameraId) {
         mContext = context;
@@ -57,12 +61,11 @@ public class Camera {
         mMetadataWriter = metadataWriter;
     }
 
-    public void open(int width, int height) {
-        Log.i(TAG, "openCamera " + mCameraId + " " + width + " " + height);
+    public void open() {
+        Log.i(TAG, "openCamera " + mCameraId);
 
         ensurePermission(mContext, Manifest.permission.CAMERA);
 
-        setUpOutputs(width, height);
         try {
             CameraCharacteristics camera_characteristics = mCameraManager.getCameraCharacteristics(mCameraId);
             int timestamp_source = camera_characteristics.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE);
@@ -72,21 +75,24 @@ public class Camera {
                 Log.e(TAG, "Camera " + mCameraId + " time source is unknown; not good");
             }
 
-            if (!mCameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
+            if (!mCameraOpenCloseLock.tryAcquire(5000, TimeUnit.MILLISECONDS)) {
                 throw new RuntimeException("Time out waiting to lock camera opening.");
             }
+            Log.i(TAG, "Opening camera");
+            startBackgroundThread();
+            setUpOutputs();
             mCameraManager.openCamera(mCameraId, mCameraDeviceStateCallback, mCameraBackgroundHandler);
         } catch (CameraAccessException e) {
-            e.printStackTrace();
+            Log.e(TAG, "open/CameraAccessException: " + e);
         } catch (SecurityException e) {
-            e.printStackTrace();
+            Log.e(TAG, "open/SecurityException: " + e);
         } catch (InterruptedException e) {
             throw new RuntimeException("Interrupted while trying to lock camera opening.", e);
         }
     }
 
-    public void setUpOutputs(int width, int height) {
-        Log.i(TAG, "setUpCameraOutputs " + mCameraId + " " + width + " " + height);
+    private void setUpOutputs() {
+        Log.i(TAG, "setUpCameraOutputs " + mCameraId);
         try {
             CameraCharacteristics characteristics
                     = mCameraManager.getCameraCharacteristics(mCameraId);
@@ -96,17 +102,17 @@ public class Camera {
             assert map != null;
             //Log.i(TAG, "scaler map: " + map);
 
-            // For still image captures, we use the largest available size.
             Size largest = Collections.max(
                     Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
                     new CompareSizesByArea());
             Log.i(TAG, "Largest output is " + largest);
-            mImageReader = ImageReader.newInstance(width, height, // largest.getWidth(), largest.getHeight(),
+            mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
                     ImageFormat.JPEG, /*maxImages*/ MAX_IMAGE_READER_IMAGES);
+            assert mImageReader != null;
             mImageReader.setOnImageAvailableListener(
                     mOnImageAvailableListener, mCameraBackgroundHandler);
         } catch (CameraAccessException e) {
-            e.printStackTrace();
+            Log.e(TAG, "setUpOutputs: CamearAccessException");
         }
     }
 
@@ -123,40 +129,40 @@ public class Camera {
                 mCameraDevice = null;
             }
             if (null != mImageReader) {
-                mImageReader.close();
+                mImageReader.close();//
                 mImageReader = null;
             }
-        } catch (InterruptedException e) {
+        }  catch (InterruptedException e) {
             throw new RuntimeException("Interrupted while trying to lock camera closing.", e);
         } finally {
+            stopBackgroundThread();
             mCameraOpenCloseLock.release();
         }
     }
 
-    private void createPreviewSession() {
+    private void createStillCameraSession() {
         try {
-            mPreviewRequestBuilder
-                    = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            mPreviewRequestBuilder.addTarget(mImageReader.getSurface());
-
+            mCaptureRequestBuilder
+                    = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            mCaptureRequestBuilder.addTarget(mImageReader.getSurface());
+            mCaptureRequest = mCaptureRequestBuilder.build();
+            Log.i(TAG, "creating capture sesion");
             mCameraDevice.createCaptureSession(Arrays.asList(mImageReader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
 
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                            Log.i(TAG, "capture session configured");
                             if (null == mCameraDevice) {
                                 Log.v(TAG, "onConfigured " + mCameraId + ", but camera is already closed");
                                 return;
                             }
-
                             mCaptureSession = cameraCaptureSession;
                             try {
-                                Log.i(TAG, "setting repeating request");
-                                mPreviewRequest = mPreviewRequestBuilder.build();
-                                mCaptureSession.setRepeatingRequest(mPreviewRequest,
-                                        mCaptureCallback, mCameraBackgroundHandler);
+                                Log.i(TAG, "Initiating capture");
+                                mCaptureSession.capture(mCaptureRequest, mCaptureCallback, mCameraBackgroundHandler);
                             } catch (CameraAccessException e) {
-                                e.printStackTrace();
+                                Log.e(TAG, "CameraAccessException: " + e);
                             }
                         }
 
@@ -168,7 +174,45 @@ public class Camera {
                     }, null
             );
         } catch (CameraAccessException e) {
-            e.printStackTrace();
+            Log.e(TAG, "CameraAccessException: " + e);
+        }
+    }
+
+    private void createPreviewCameraSession() {
+        try {
+            mCaptureRequestBuilder
+                    = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            mCaptureRequestBuilder.addTarget(mImageReader.getSurface());
+            mCaptureRequest = mCaptureRequestBuilder.build();
+            Log.i(TAG, "creating capture sesion");
+            mCameraDevice.createCaptureSession(Arrays.asList(mImageReader.getSurface()),
+                    new CameraCaptureSession.StateCallback() {
+
+                        @Override
+                        public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                            Log.i(TAG, "capture session configured");
+                            if (mCameraDevice == null) {
+                                Log.v(TAG, "onConfigured " + mCameraId + ", but camera is already closed");
+                                return;
+                            }
+                            mCaptureSession = cameraCaptureSession;
+                            try {
+                                Log.i(TAG, "Initiating capture");
+                                mCaptureSession.setRepeatingRequest(mCaptureRequest, mCaptureCallback, mCameraBackgroundHandler);
+                            } catch (CameraAccessException e) {
+                                Log.e(TAG, "CameraAccessException: " + e);
+                            }
+                        }
+
+                        @Override
+                        public void onConfigureFailed(
+                                @NonNull CameraCaptureSession cameraCaptureSession) {
+                            Log.e(TAG, "onConfiguredFailed");
+                        }
+                    }, null
+            );
+        } catch (CameraAccessException e) {
+            Log.e(TAG, "CameraAccessException: " + e);
         }
     }
 
@@ -178,7 +222,7 @@ public class Camera {
             Log.i(TAG, "camera device " + mCameraId + " opened");
             mCameraOpenCloseLock.release();
             mCameraDevice = cameraDevice;
-            createPreviewSession();
+            createPreviewCameraSession();
         }
 
         @Override
@@ -218,7 +262,7 @@ public class Camera {
             try {
                 mMetadataWriter.write(formatCaptureResult(result));
             } catch (IOException e) {
-                e.printStackTrace();
+                Log.e(TAG, "I/O Exception on mMetaDataWriter");
             }
         }
 
@@ -244,21 +288,24 @@ public class Camera {
         }
     };
 
-    public void startBackgroundThread() {
+    private void startBackgroundThread() {
+        Log.i(TAG, "starting background thread for camera " + mCameraId);
         mCameraBackgroundThread = new HandlerThread("CameraBackgroundThread");
         mCameraBackgroundThread.start();
         mCameraBackgroundHandler = new Handler(mCameraBackgroundThread.getLooper());
     }
 
-    public void stopBackgroundThread() {
+    private void stopBackgroundThread() {
+        Log.i(TAG, "stopping background thread for camera " + mCameraId);
         mCameraBackgroundThread.quitSafely();
         try {
             mCameraBackgroundThread.join();
             mCameraBackgroundThread = null;
             mCameraBackgroundHandler = null;
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            Log.e(TAG, "stopBackgroundThread: " + e);
         }
+        Log.i(TAG, "background thread for camera " + mCameraId + " stopped");
     }
 
     static class CompareSizesByArea implements Comparator<Size> {
@@ -277,7 +324,6 @@ public class Camera {
         private final Image mImage;
         private final File mFile;
 
-
         public ImageSaver(Image image, File dir) {
             mId = mIdCounter.getAndIncrement();
             mImage = image;
@@ -287,28 +333,14 @@ public class Camera {
         @Override
         public void run() {
             Log.v(TAG, "ImageSaver " + mId);
-            ByteBuffer buffer = mImage.getPlanes()[0].getBuffer();
-            byte[] bytes = new byte[buffer.remaining()];
-            buffer.get(bytes);
-            FileOutputStream output = null;
             try {
-                output = new FileOutputStream(mFile);
-                output.write(bytes);
-            } catch (IOException e) {
-                e.printStackTrace();
+                CameraUtils.writeImage(mImage, mFile);
             } finally {
                 mImage.close();
-                if (null != output) {
-                    try {
-                        output.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
             }
-            mImage.close();
             Log.v(TAG, "ImageSaver wrote " + mFile);
         }
+
     }
 
     void ensurePermission(final Context context, final String permission) {
@@ -332,8 +364,8 @@ public class Camera {
 
     private AtomicInteger mImageIndexCounter = new AtomicInteger(0);
     private ImageReader mImageReader;
-    private CaptureRequest.Builder mPreviewRequestBuilder;
-    private CaptureRequest mPreviewRequest;
+    private CaptureRequest.Builder mCaptureRequestBuilder;
+    private CaptureRequest mCaptureRequest;
 
     private HandlerThread mCameraBackgroundThread;
     private Handler mCameraBackgroundHandler;

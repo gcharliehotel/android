@@ -1,6 +1,7 @@
 package com.google.charliehotel.calibrationrecorder;
 
-// pm grant com.google.charliehotel.calibrationrecorder android.permission.CAMERA
+// pm grant com.google.charliehotel.calibrationrecorder android.permission.CAMERA android.permission.WAKE_LOCK
+// am start -n com.google.charliehotel.calibrationrecorder/.MainActivity
 // am start -n "com.google.charliehotel.calibrationrecorder/com.google.charliehotel.calibrationrecorder.MainActivity" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
 
 
@@ -11,6 +12,7 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
 import android.util.Log;
@@ -23,26 +25,20 @@ import java.io.Writer;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.RunnableFuture;
+import java.util.concurrent.TimeoutException;
+
 
 public class MainActivity extends Activity {
     private static final String TAG = "CalibrationRecorder";
 
-    private static boolean ENABLE_CAMERAS = true;
-    private static boolean ENABLE_DUAL_CAMERAS = false;
+    private static boolean ENABLE_LEFT_CAMERA = true;
+    private static boolean ENABLE_RIGHT_CAMERA = false;
     private static boolean ENABLE_SENSORS = true;
-    private static boolean FINISH_UPON_PAUSING = true;
+    private static boolean FINISH_UPON_PAUSING = false;
 
     private static final String LEFT_CAMERA_ID = "0";
     private static final String RIGHT_CAMERA_ID = "1";
-
-    /**
-     * Max preview width/height that is guaranteed by Camera2 API
-     */
-    private static final int CAMERA2_MAX_PREVIEW_WIDTH = 1920;
-    private static final int CAMERA2_MAX_PREVIEW_HEIGHT = 1080;
-
-    private static final int PREVIEW_WIDTH = 3016; // CAMERA2_MAX_PREVIEW_WIDTH;
-    private static final int PREVIEW_HEIGHT = 3016; // CAMERA2_MAX_PREVIEW_HEIGHT;
 
     private static final int ACCEL_LPF_TIMESTAMP_OFFSET_NS = 1370833;
     private static final int GYRO_LPF_TIMESTAMP_OFFSET_NS = 1370833;
@@ -63,10 +59,12 @@ public class MainActivity extends Activity {
 
         setContentView(R.layout.activity_main);
 
+        mHandler = new Handler();
+
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mPowerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
 
-        mWakeLock = mPowerManager.newWakeLock(PowerManager.FULL_WAKE_LOCK, TAG + "WakeLock");
+        mWakeLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG + "WakeLock");
         mWakeLock.acquire();
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
@@ -79,8 +77,10 @@ public class MainActivity extends Activity {
         }
         assert mGyroSensor != null;
 
-        mLeftCamera = new Camera(this, LEFT_CAMERA_ID);
-        if (ENABLE_DUAL_CAMERAS) {
+        if (ENABLE_LEFT_CAMERA) {
+            mLeftCamera = new Camera(this, LEFT_CAMERA_ID);
+        }
+        if (ENABLE_RIGHT_CAMERA) {
             mRightCamera = new Camera(this, RIGHT_CAMERA_ID);
         }
 
@@ -109,32 +109,31 @@ public class MainActivity extends Activity {
         if (ENABLE_SENSORS) {
             openSensors();
         }
-        if (ENABLE_CAMERAS) {
+        if (ENABLE_LEFT_CAMERA) {
             mLeftCamera.setImageDir(mLeftImageDir);
             mLeftCamera.setMetadataWriter(mLeftCameraMetadataWriter);
-            mLeftCamera.open(PREVIEW_WIDTH, PREVIEW_HEIGHT);
-            mLeftCamera.startBackgroundThread();
-
-            if (ENABLE_DUAL_CAMERAS) {
-                mRightCamera.setImageDir(mRightImageDir);
-                mRightCamera.setMetadataWriter(mRightCameraMetadataWriter);
-                mRightCamera.open(PREVIEW_WIDTH, PREVIEW_HEIGHT);
-                mRightCamera.startBackgroundThread();
-            }
+            mLeftCamera.open();
         }
+
+        if (ENABLE_RIGHT_CAMERA) {
+            mRightCamera.setImageDir(mRightImageDir);
+            mRightCamera.setMetadataWriter(mRightCameraMetadataWriter);
+            mRightCamera.open();
+        }
+
         Log.i(TAG, "onResume done");
     }
 
     @Override
     public void onPause() {
         Log.i(TAG, "onPause");
-        if (ENABLE_CAMERAS) {
+        if (mLeftCamera != null) {
             mLeftCamera.close();
-            mLeftCamera.stopBackgroundThread();
-            if (ENABLE_DUAL_CAMERAS) {
-                mRightCamera.close();
-                mRightCamera.stopBackgroundThread();
-            }
+            mLeftCamera = null;
+        }
+        if (mRightCamera != null) {
+            mRightCamera.close();
+            mRightCamera = null;
         }
         if (ENABLE_SENSORS) {
             closeSensors();
@@ -165,13 +164,14 @@ public class MainActivity extends Activity {
             mAccelWriter = new FileWriter(new File(mDir, ACCEL_DATA_FILENAME));
             mGyroWriter = new FileWriter(new File(mDir, GYRO_DATA_FILENAME));
 
-            mLeftImageDir = new File(mDir, LEFT_IMAGE_DIRNAME);
-            if (!mLeftImageDir.mkdir()) {
-                showToast("Could not mkdir " + mLeftImageDir);
+            if (mLeftCamera != null) {
+                mLeftImageDir = new File(mDir, LEFT_IMAGE_DIRNAME);
+                if (!mLeftImageDir.mkdir()) {
+                    showToast("Could not mkdir " + mLeftImageDir);
+                }
+                mLeftCameraMetadataWriter = new FileWriter(new File(mDir, CAMERA_LEFT_METADATA_FILENAME));
             }
-            mLeftCameraMetadataWriter = new FileWriter(new File(mDir, CAMERA_LEFT_METADATA_FILENAME));
-
-            if (ENABLE_DUAL_CAMERAS) {
+            if (mRightCamera != null) {
                 mRightImageDir = new File(mDir, RIGHT_IMAGE_DIRNAME);
                 if (!mRightImageDir.mkdir()) {
                     showToast("Could not mkdir " + mRightImageDir);
@@ -290,4 +290,6 @@ public class MainActivity extends Activity {
     private File mRightImageDir;
     private FileWriter mLeftCameraMetadataWriter;
     private FileWriter mRightCameraMetadataWriter;
+
+    private Handler mHandler;
 }
