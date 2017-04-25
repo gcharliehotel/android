@@ -84,11 +84,7 @@ public class MainActivity extends Activity {
             mRightCamera = new Camera(this, RIGHT_CAMERA_ID);
         }
 
-        File external_dir = getExternalFilesDir(null);
-        DateFormat date_format = new SimpleDateFormat("YYYYMMDDHHMMSS");
-        date_format.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
-        String run_name = date_format.format(new Date());
-        mDir = new File(external_dir, run_name);
+        mDir = makeRunDir(getExternalFilesDir(null));
         Log.i(TAG, "mDir=" + mDir);
 
         Log.i(TAG, "onCreate done");
@@ -271,6 +267,13 @@ public class MainActivity extends Activity {
             Log.i(TAG, "Gryo accuracy changed to " + i);
         }
     };
+
+    private static File makeRunDir(File external_dir) {
+        DateFormat date_format = new SimpleDateFormat("YYYYMMDDHHMMSS");
+        date_format.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        String run_name = date_format.format(new Date());
+        return new File(external_dir, run_name);
+    }
 
     private PowerManager mPowerManager;
     private WakeLock mWakeLock;
