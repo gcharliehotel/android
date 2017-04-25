@@ -1,6 +1,7 @@
 package com.google.charliehotel.calibrationrecorder;
 
 import android.media.Image;
+import android.support.annotation.NonNull;
 import android.util.Log;
 
 import java.io.File;
@@ -11,7 +12,7 @@ import java.nio.ByteBuffer;
 class CameraUtils {
     final static String TAG = "CameraUtils";
 
-    static void writeImage(Image image, File file) {
+    static void writeImage(@NonNull Image image, @NonNull File file) {
         ByteBuffer buffer = image.getPlanes()[0].getBuffer();
         FileOutputStream output = null;
         try {
@@ -29,4 +30,25 @@ class CameraUtils {
             }
         }
     }
+
+    static class ImageSaver implements Runnable {
+        private final Image mImage;
+        private final File mFile;
+
+        ImageSaver(Image adopted_image, File file) {
+            mImage = adopted_image;
+            mFile = file;
+        }
+
+        @Override
+        public void run() {
+            try {
+                CameraUtils.writeImage(mImage, mFile);
+            } finally {
+                mImage.close();
+            }
+            Log.v(TAG, "ImageSaver wrote " + mFile);
+        }
+    }
+
 }
