@@ -24,7 +24,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final String TAG = "CalibrationRecorder";
 
-    private static final boolean ENABLE_LEFT_CAMERA = true
+    private static final boolean ENABLE_LEFT_CAMERA = true;
     private static final boolean ENABLE_RIGHT_CAMERA = false;
     private static final boolean ENABLE_SENSORS = true;
 
