@@ -59,8 +59,6 @@ public class MainActivity extends Activity {
 
         setContentView(R.layout.activity_main);
 
-        mHandler = new Handler();
-
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mPowerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
 
@@ -84,7 +82,7 @@ public class MainActivity extends Activity {
             mRightCamera = new Camera(this, RIGHT_CAMERA_ID);
         }
 
-        mDir = makeRunDir(getExternalFilesDir(null));
+        mDir = getRunDir(getExternalFilesDir(null));
         Log.i(TAG, "mDir=" + mDir);
 
         Log.i(TAG, "onCreate done");
@@ -101,7 +99,9 @@ public class MainActivity extends Activity {
     public void onResume() {
         super.onResume();
         Log.i(TAG, "onResume");
+
         setupFiles();
+
         if (ENABLE_SENSORS) {
             openSensors();
         }
@@ -123,19 +123,23 @@ public class MainActivity extends Activity {
     @Override
     public void onPause() {
         Log.i(TAG, "onPause");
-        if (mLeftCamera != null) {
-            mLeftCamera.close();
-            mLeftCamera = null;
-        }
-        if (mRightCamera != null) {
-            mRightCamera.close();
-            mRightCamera = null;
-        }
-        if (ENABLE_SENSORS) {
-            closeSensors();
-        }
-        cleanupFiles();
 
+        try {
+            if (mLeftCamera != null) {
+                mLeftCamera.close();
+                mLeftCamera = null;
+            }
+            if (mRightCamera != null) {
+                mRightCamera.close();
+                mRightCamera = null;
+            }
+
+            if (ENABLE_SENSORS) {
+                closeSensors();
+            }
+        } finally {
+            cleanupFiles();
+        }
         if (FINISH_UPON_PAUSING) {
             finish();
         }
@@ -154,6 +158,7 @@ public class MainActivity extends Activity {
     void setupFiles() {
         try {
             if (!mDir.mkdir()) {
+                Log.e(TAG, "Could not mkdir " + mDir);
                 showToast("Could not mkdir " + mDir);
             }
 
@@ -163,6 +168,7 @@ public class MainActivity extends Activity {
             if (mLeftCamera != null) {
                 mLeftImageDir = new File(mDir, LEFT_IMAGE_DIRNAME);
                 if (!mLeftImageDir.mkdir()) {
+                    Log.e(TAG, "Could not mkdir " + mLeftImageDir);
                     showToast("Could not mkdir " + mLeftImageDir);
                 }
                 mLeftCameraMetadataWriter = new FileWriter(new File(mDir, CAMERA_LEFT_METADATA_FILENAME));
@@ -170,6 +176,7 @@ public class MainActivity extends Activity {
             if (mRightCamera != null) {
                 mRightImageDir = new File(mDir, RIGHT_IMAGE_DIRNAME);
                 if (!mRightImageDir.mkdir()) {
+                    Log.e(TAG, "Could not mkdir " + mRightImageDir);
                     showToast("Could not mkdir " + mRightImageDir);
                 }
                 mRightCameraMetadataWriter = new FileWriter(new File(mDir, CAMERA_RIGHT_METADATA_FILENAME));
@@ -268,7 +275,7 @@ public class MainActivity extends Activity {
         }
     };
 
-    private static File makeRunDir(File external_dir) {
+    private static File getRunDir(File external_dir) {
         DateFormat date_format = new SimpleDateFormat("YYYYMMDDHHMMSS");
         date_format.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
         String run_name = date_format.format(new Date());
@@ -293,6 +300,4 @@ public class MainActivity extends Activity {
     private File mRightImageDir;
     private FileWriter mLeftCameraMetadataWriter;
     private FileWriter mRightCameraMetadataWriter;
-
-    private Handler mHandler;
 }
