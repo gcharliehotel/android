@@ -20,7 +20,7 @@ class Sensors {
     private static final int ACCEL_200HZ_PERIOD_US = 5000;
     private static final int GYRO_200HZ_PERIOD_US = 5000;
 
-    public Sensors(@NonNull Context context) {
+    Sensors(@NonNull Context context) {
         mSensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
         mAccelSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         assert mAccelSensor != null;
@@ -32,21 +32,21 @@ class Sensors {
         assert mGyroSensor != null;
     }
 
-    public void setAccelWriter(@NonNull FileWriter writer) {
+    void setAccelWriter(@NonNull FileWriter writer) {
         mAccelWriter = writer;
     }
 
-    public void setGyroWriter(@NonNull FileWriter writer) {
+    void setGyroWriter(@NonNull FileWriter writer) {
         mGyroWriter = writer;
     }
 
-    public void open() {
+    void open() {
         Log.i(TAG, "Setting sensor callbacks");
         mSensorManager.registerListener(mAccelSensorEventListener, mAccelSensor, ACCEL_200HZ_PERIOD_US);
         mSensorManager.registerListener(mGyroSensorEventListener, mGyroSensor, GYRO_200HZ_PERIOD_US);
     }
 
-    public void close() {
+    void close() {
         mSensorManager.unregisterListener(mAccelSensorEventListener, mAccelSensor);
         mSensorManager.unregisterListener(mGyroSensorEventListener, mGyroSensor);
     }
