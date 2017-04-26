@@ -47,6 +47,8 @@ class Camera {
 
     private static final int MAX_IMAGE_READER_IMAGES = 4;
 
+    private static final float SCALE_FACTOR = 1.0f;
+
     Camera(@NonNull Context context, @NonNull String cameraId) {
         mContext = context;
         mCameraId = cameraId;
@@ -100,12 +102,17 @@ class Camera {
             StreamConfigurationMap map = characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             assert map != null;
-            //Log.i(TAG, "scaler map: " + map);
+            //Log.i(TAG, "scaler map: " + map)i
 
             Size largest = Collections.max(
                     Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
                     new CompareSizesByArea());
             Log.i(TAG, "Largest output is " + largest);
+            int width = largest.getWidth();
+            int height = largest.getHeight();
+            width = Math.round(width * SCALE_FACTOR);
+            height = Math.round(height * SCALE_FACTOR);
+            Log.i(TAG, "using " + width + " x " + height);
             mImageReader = ImageReader.newInstance(largest.getWidth(), largest.getHeight(),
                     ImageFormat.JPEG, /*maxImages*/ MAX_IMAGE_READER_IMAGES);
             assert mImageReader != null;
